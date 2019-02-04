@@ -48,15 +48,15 @@ def _build_impl(frame_sequence: pims.FramesSequence,
                      criteria=(
                      cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    image_0_8bit = frame_sequence[0]
-    centers = cv2.goodFeaturesToTrack(image_0_8bit, mask=None, **feature_params)
+    image_0 = frame_sequence[0]
+    centers = cv2.goodFeaturesToTrack(image_0, mask=None, **feature_params)
     ids = np.array(range(len(centers)))
     next_id = len(centers)
     radiuses = np.array(np.full(len(centers), radius))
     corners = FrameCorners(ids, centers.reshape((-1, 2)), radiuses)
 
     builder.set_corners_at_frame(0, corners)
-    image_0_8bit = np.uint8(image_0_8bit * 255.0)
+    image_0_8bit = np.uint8(image_0 * 255.0)
     for frame, image_1 in enumerate(frame_sequence[1:], 1):
         image_1_8bit = np.uint8(image_1 * 255.0)
         p1, _st, _err = cv2.calcOpticalFlowPyrLK(image_0_8bit, image_1_8bit, centers, None, **lk_params)
