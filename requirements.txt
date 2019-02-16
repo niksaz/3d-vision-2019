@@ -1,7 +1,12 @@
 click
 imageio
+matplotlib
 moviepy
 numpy
 opencv-python
 pims
+PyOpenGL
+recordclass
 scipy
+transforms3d
+voluptuous
