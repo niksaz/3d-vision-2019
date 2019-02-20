@@ -47,7 +47,7 @@ def _build_program():
 
 
 def _build_projection_matrix(fov_y, aspect_ratio, z_near, z_far):
-    y_max = z_near * np.tan(fov_y)
+    y_max = z_near * np.tan(fov_y / 2.0)
     x_max = y_max * aspect_ratio
     z_diff = z_near - z_far
     return np.array([
