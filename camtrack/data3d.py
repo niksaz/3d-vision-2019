@@ -17,6 +17,11 @@ from collections import namedtuple
 import itertools as itt
 from typing import IO, List
 import yaml
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
+
 
 import click
 import numpy as np
@@ -30,7 +35,7 @@ class DataFormatError(Exception):
 
 def _check_data_format(stream, schema, name):
     try:
-        data = yaml.load(stream)
+        data = yaml.load(stream, Loader)
     except yaml.YAMLError as err:
         raise DataFormatError('{} YAML error: {}'.format(name, err))
     try:
@@ -44,7 +49,7 @@ def _check_and_write_data(data, stream, schema, name):
         schema(data)
     except Invalid as err:
         raise DataFormatError('{} format error: {}'.format(name, err))
-    yaml.dump(data, stream)
+    yaml.dump(data, stream, Dumper)
 
 
 CameraParameters = namedtuple('CameraParameters', ('fov_y', 'aspect_ratio'))
