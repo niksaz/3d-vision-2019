@@ -3,6 +3,7 @@ __all__ = [
     'PointCloudBuilder',
     'TriangulationParameters',
     'build_correspondences',
+    'remove_correspondences_with_ids',
     'calc_point_cloud_colors',
     'calc_inlier_indices',
     'check_inliers_mask',
@@ -124,8 +125,8 @@ TriangulationParameters = namedtuple(
 )
 
 
-def _remove_correspondences_with_ids(correspondences: Correspondences,
-                                     ids_to_remove: np.ndarray) \
+def remove_correspondences_with_ids(correspondences: Correspondences,
+                                    ids_to_remove: np.ndarray) \
         -> Correspondences:
     ids = correspondences.ids.flatten()
     ids_to_remove = ids_to_remove.flatten()
@@ -150,7 +151,7 @@ def build_correspondences(corners_1: FrameCorners, corners_2: FrameCorners,
         corners_2.points[indices_2]
     )
     if ids_to_remove is not None:
-        corrs = _remove_correspondences_with_ids(corrs, ids_to_remove)
+        corrs = remove_correspondences_with_ids(corrs, ids_to_remove)
     return corrs
 
 
@@ -390,6 +391,16 @@ def calc_point_cloud_colors(pc_builder: PointCloudBuilder,
     pc_builder.set_colors(colors)
 
 
+def _resize_image_for_display_resolution(img):
+    display_width, display_height = 1280, 720
+    img_width, img_height = img.shape[1], img.shape[0]
+    scale_width = min(1.0, display_width / img_width)
+    scale_height = min(1.0, display_height / img_height)
+    scale = min(scale_width, scale_height)
+    dim = (int(scale * img_width), int(scale * img_height))
+    return cv2.resize(img, dim)
+
+
 def create_cli(track_and_calc_colors):
     @click.command()
     @click.argument('frame_sequence')
@@ -433,6 +444,7 @@ def create_cli(track_and_calc_colors):
                 bgra = draw_residuals(grayscale, corner_storage[frame],
                                       point_cloud, camera_parameters,
                                       poses[frame])
+                bgra = _resize_image_for_display_resolution(bgra)
                 cv2.imshow('Frame', bgra)
                 key = chr(cv2.waitKey(20) & 0xFF)
                 if key == 'r':
