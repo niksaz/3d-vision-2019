@@ -107,9 +107,11 @@ def _track_camera_with_params(
                 image_points.append(point)
             if len(object_points) < 4:
                 return TrackingResult(is_successful=False, view_mats=None, builder=None)
+            object_points = np.array(object_points, dtype=np.float64).reshape((len(object_points), 1, 3))
+            image_points = np.array(image_points, dtype=np.float64).reshape((len(object_points), 1, 2))
             retval, rvec, tvec, inliers = cv2.solvePnPRansac(
-                np.array(object_points),
-                np.array(image_points),
+                object_points,
+                image_points,
                 cameraMatrix=intrinsic_mat,
                 distCoeffs=np.array([]),
                 flags=cv2.SOLVEPNP_EPNP)
