@@ -3,6 +3,7 @@ __all__ = [
     'PointCloudBuilder',
     'TriangulationParameters',
     'build_correspondences',
+    'remove_correspondences_with_ids',
     'calc_point_cloud_colors',
     'calc_inlier_indices',
     'check_inliers_mask',
@@ -124,8 +125,8 @@ TriangulationParameters = namedtuple(
 )
 
 
-def _remove_correspondences_with_ids(correspondences: Correspondences,
-                                     ids_to_remove: np.ndarray) \
+def remove_correspondences_with_ids(correspondences: Correspondences,
+                                    ids_to_remove: np.ndarray) \
         -> Correspondences:
     ids = correspondences.ids.flatten()
     ids_to_remove = ids_to_remove.flatten()
@@ -150,7 +151,7 @@ def build_correspondences(corners_1: FrameCorners, corners_2: FrameCorners,
         corners_2.points[indices_2]
     )
     if ids_to_remove is not None:
-        corrs = _remove_correspondences_with_ids(corrs, ids_to_remove)
+        corrs = remove_correspondences_with_ids(corrs, ids_to_remove)
     return corrs
 
 

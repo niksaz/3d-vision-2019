@@ -28,17 +28,18 @@ def _init_on_two_frames(frame_corners_0, frame_corners_1, intrinsic_mat, triang_
     H, h_mask = cv2.findHomography(pts_0, pts_1, method=cv2.RANSAC, ransacReprojThreshold=1.0, confidence=0.999)
     if np.nonzero(h_mask)[0].size / len(pts_0) > 0.9:
         return best_pose, best_pts, best_ids
-    E, e_mask = cv2.findEssentialMat(pts_0, pts_1, cameraMatrix=intrinsic_mat, method=cv2.RANSAC, prob=0.999, threshold=1.0)
+    E, e_mask = cv2.findEssentialMat(
+        pts_0, pts_1, cameraMatrix=intrinsic_mat, method=cv2.RANSAC, prob=0.999, threshold=1.0)
     if E is None or E.shape != (3, 3):
         return best_pose, best_pts, best_ids
-    correspondences = build_correspondences(frame_corners_0, frame_corners_1, ids_to_remove=np.where(e_mask == 0)[0])
+    correspondences = remove_correspondences_with_ids(correspondences, np.where(e_mask == 0)[0])
     R1, R2, t_d = cv2.decomposeEssentialMat(E)
     for R, t in [(R1, t_d), (R1, -t_d), (R2, t_d), (R2, -t_d)]:
         pose_1 = Pose(r_mat=R, t_vec=t)
         view_0 = eye3x4()
         view_1 = pose_to_view_mat3x4(pose_1)
         pts, ids = triangulate_correspondences(correspondences, view_0, view_1, intrinsic_mat, triang_params)
-        if best_pose is None or len(ids) > len(best_ids):
+        if len(best_ids) < len(ids):
             best_pose, best_pts, best_ids = pose_1, pts, ids
     return best_pose, best_pts, best_ids
 
