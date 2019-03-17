@@ -53,7 +53,7 @@ def _build_impl(frame_sequence: pims.FramesSequence,
     ids = np.array(range(len(centers)))
     next_id = len(centers)
     radiuses = np.array(np.full(len(centers), radius))
-    corners = FrameCorners(ids, centers.reshape((-1, 2)), radiuses)
+    corners = FrameCorners(ids, centers.reshape((-1, 2)), radiuses, np.zeros(len(ids)))
 
     builder.set_corners_at_frame(0, corners)
     image_0_8bit = np.uint8(image_0 * 255.0)
@@ -67,6 +67,7 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         ids = ids[present_fs]
         centers = p1[present_fs]
         radiuses = radiuses[present_fs]
+        flow_quals = d[present_fs]
 
         if len(centers) < feature_params['maxCorners']:
             mask = np.full(image_1.shape, 255, dtype=np.uint8)
@@ -78,18 +79,21 @@ def _build_impl(frame_sequence: pims.FramesSequence,
                 new_ids = []
                 new_centers = []
                 new_radiuses = []
+                new_flow_quals = []
                 for arr in p0:
                     if len(ids) + len(new_ids) >= feature_params['maxCorners']:
                         break
                     new_ids.append(next_id)
                     new_centers.append(arr)
                     new_radiuses.append(radius)
+                    new_flow_quals.append(0.0)
                     next_id += 1
                 ids = np.concatenate([ids, new_ids])
                 centers = np.concatenate([centers, new_centers])
                 radiuses = np.concatenate([radiuses, new_radiuses])
+                flow_quals = np.concatenate([flow_quals, new_flow_quals])
 
-        corners = FrameCorners(ids, centers.reshape((-1, 2)), radiuses)
+        corners = FrameCorners(ids, centers.reshape((-1, 2)), radiuses, flow_quals)
         builder.set_corners_at_frame(frame, corners)
         image_0_8bit = image_1_8bit
 

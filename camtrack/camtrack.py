@@ -18,21 +18,21 @@ from _camtrack import *
 
 def _init_on_two_frames(frame_corners_0, frame_corners_1, intrinsic_mat, triang_params) \
         -> Tuple[Pose, np.ndarray, np.ndarray]:
+    best_pose, best_pts, best_ids = None, np.array([]), np.array([])
     correspondences = build_correspondences(frame_corners_0, frame_corners_1)
     if len(correspondences.ids) < 5:
-        return None, None, None
+        return best_pose, best_pts, best_ids
     pts_0 = correspondences.points_1
     pts_1 = correspondences.points_2
     # Check if the E matrix will be well-defined based on homography matrix
     H, h_mask = cv2.findHomography(pts_0, pts_1, method=cv2.RANSAC, ransacReprojThreshold=1.0, confidence=0.999)
     if np.nonzero(h_mask)[0].size / len(pts_0) > 0.9:
-        return None, None, None
+        return best_pose, best_pts, best_ids
     E, e_mask = cv2.findEssentialMat(pts_0, pts_1, cameraMatrix=intrinsic_mat, method=cv2.RANSAC, prob=0.999, threshold=1.0)
     if E is None or E.shape != (3, 3):
-        return None, None, None
+        return best_pose, best_pts, best_ids
     correspondences = build_correspondences(frame_corners_0, frame_corners_1, ids_to_remove=np.where(e_mask == 0)[0])
     R1, R2, t_d = cv2.decomposeEssentialMat(E)
-    best_pose, best_pts, best_ids = None, None, None
     for R, t in [(R1, t_d), (R1, -t_d), (R2, t_d), (R2, -t_d)]:
         pose_1 = Pose(r_mat=R, t_vec=t)
         view_0 = eye3x4()
@@ -49,7 +49,7 @@ def _find_best_pair(corner_storage: CornerStorage, intrinsic_mat: np.ndarray, tr
     for frame_index in range(1, len(corner_storage)):
         _, _, ids = _init_on_two_frames(
             corner_storage[0], corner_storage[frame_index], intrinsic_mat, triang_params)
-        if ids is None or len(ids) == 0:
+        if len(ids) == 0:
             continue
         print('Best pose for frame {} contains {} points'.format(frame_index, len(ids)))
         if (ids is not None) and (best_index is None or len(ids) > largest_size):
@@ -95,21 +95,21 @@ def _track_camera_with_params(
         else:
             frame_corners = corner_storage[frame_index]
             ids = []
-            objectPoints = []
-            imagePoints = []
-            for id, point in zip(frame_corners.ids, frame_corners.points):
-                indices_x, _ = np.nonzero(builder.ids == id)
+            object_points = []
+            image_points = []
+            for corner_id, point in zip(frame_corners.ids, frame_corners.points):
+                indices_x, _ = np.nonzero(builder.ids == corner_id)
                 if len(indices_x) == 0:
                     continue
                 paired_frame = indices_x[0]
-                ids.append(id)
-                objectPoints.append(builder.points[paired_frame])
-                imagePoints.append(point)
-            if len(objectPoints) < 4:
+                ids.append(corner_id)
+                object_points.append(builder.points[paired_frame])
+                image_points.append(point)
+            if len(object_points) < 4:
                 return TrackingResult(is_successful=False, view_mats=None, builder=None)
             retval, rvec, tvec, inliers = cv2.solvePnPRansac(
-                np.array(objectPoints),
-                np.array(imagePoints),
+                np.array(object_points),
+                np.array(image_points),
                 cameraMatrix=intrinsic_mat,
                 distCoeffs=np.array([]),
                 flags=cv2.SOLVEPNP_EPNP)
@@ -148,7 +148,7 @@ def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
             return result.view_mats, result.builder
         else:
             print('Unsuccessful tracking. Restarting with weaker constraints...')
-    return None, None
+    return [], PointCloudBuilder()
 
 
 def track_and_calc_colors(camera_parameters: CameraParameters,

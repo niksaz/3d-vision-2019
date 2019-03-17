@@ -32,9 +32,9 @@ class FrameCorners:
     (np.searchsorted).
     """
 
-    __slots__ = ('_ids', '_points', '_sizes')
+    __slots__ = ('_ids', '_points', '_sizes', '_flow_quals')
 
-    def __init__(self, ids, points, sizes):
+    def __init__(self, ids, points, sizes, flow_quals):
         """
         Construct FrameCorners.
 
@@ -48,6 +48,7 @@ class FrameCorners:
         self._ids = ids[sorting_idx].reshape(-1, 1)
         self._points = points[sorting_idx].reshape(-1, 2)
         self._sizes = sizes[sorting_idx].reshape(-1, 1)
+        self._flow_quals = flow_quals[sorting_idx].reshape(-1, 1)
 
     @property
     def ids(self):
@@ -61,10 +62,15 @@ class FrameCorners:
     def sizes(self):
         return self._sizes
 
+    @property
+    def flow_quals(self):
+        return self._flow_quals
+
     def __iter__(self):
         yield self.ids
         yield self.points
         yield self.sizes
+        yield self.flow_quals
 
 
 def filter_frame_corners(frame_corners: FrameCorners,
