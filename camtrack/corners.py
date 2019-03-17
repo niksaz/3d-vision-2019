@@ -7,7 +7,8 @@ __all__ = [
     'dump',
     'load',
     'draw',
-    'without_short_tracks'
+    'without_short_tracks',
+    'without_long_jump_corners',
 ]
 
 import click
@@ -16,7 +17,7 @@ import numpy as np
 import pims
 
 from _corners import FrameCorners, CornerStorage, StorageImpl
-from _corners import dump, load, draw, without_short_tracks, create_cli
+from _corners import dump, load, draw, without_short_tracks, without_long_jump_corners, create_cli
 
 
 class _CornerStorageBuilder:

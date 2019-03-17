@@ -10,7 +10,7 @@ from collections import namedtuple
 import cv2
 import numpy as np
 
-from corners import CornerStorage
+from corners import CornerStorage, without_long_jump_corners
 from data3d import CameraParameters, PointCloud, Pose
 import frameseq
 from _camtrack import *
@@ -130,6 +130,10 @@ def _track_camera_with_params(
 
 def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
         -> Tuple[List[np.ndarray], PointCloudBuilder]:
+    # 2-D metrics to filter untrustworthy corners
+    max_dst_optical_flow = 0.1
+    corner_storage = without_long_jump_corners(corner_storage, max_dst_optical_flow)
+    # Choose the first successful tracking parameters
     strict_constraints = TriangulationParameters(
         max_reprojection_error=1.0,
         min_triangulation_angle_deg=5.0,

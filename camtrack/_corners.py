@@ -8,6 +8,7 @@ __all__ = [
     'load',
     'draw',
     'without_short_tracks',
+    'without_long_jump_corners',
     'create_cli'
 ]
 
@@ -197,9 +198,15 @@ def without_short_tracks(corner_storage: CornerStorage,
         unique, counts = np.unique(corners.ids, return_counts=True)
         counter[unique] += counts
 
-    def predicate(corners):
+    def predicate(corners: FrameCorners) -> bool:
         return counter[corners.ids.flatten()] >= min_len
 
+    return StorageFilter(corner_storage, predicate)
+
+
+def without_long_jump_corners(corner_storage: CornerStorage, max_dst: float) -> CornerStorage:
+    def predicate(corners: FrameCorners) -> bool:
+        return corners.flow_quals.flatten() <= max_dst
     return StorageFilter(corner_storage, predicate)
 
 
