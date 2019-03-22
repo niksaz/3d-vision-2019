@@ -8,6 +8,7 @@ __all__ = [
     'load',
     'draw',
     'without_short_tracks',
+    'without_long_jump_corners',
     'create_cli'
 ]
 
@@ -32,9 +33,9 @@ class FrameCorners:
     (np.searchsorted).
     """
 
-    __slots__ = ('_ids', '_points', '_sizes')
+    __slots__ = ('_ids', '_points', '_sizes', '_flow_quals')
 
-    def __init__(self, ids, points, sizes):
+    def __init__(self, ids, points, sizes, flow_quals):
         """
         Construct FrameCorners.
 
@@ -48,6 +49,7 @@ class FrameCorners:
         self._ids = ids[sorting_idx].reshape(-1, 1)
         self._points = points[sorting_idx].reshape(-1, 2)
         self._sizes = sizes[sorting_idx].reshape(-1, 1)
+        self._flow_quals = flow_quals[sorting_idx].reshape(-1, 1)
 
     @property
     def ids(self):
@@ -61,10 +63,15 @@ class FrameCorners:
     def sizes(self):
         return self._sizes
 
+    @property
+    def flow_quals(self):
+        return self._flow_quals
+
     def __iter__(self):
         yield self.ids
         yield self.points
         yield self.sizes
+        yield self.flow_quals
 
 
 def filter_frame_corners(frame_corners: FrameCorners,
@@ -191,9 +198,15 @@ def without_short_tracks(corner_storage: CornerStorage,
         unique, counts = np.unique(corners.ids, return_counts=True)
         counter[unique] += counts
 
-    def predicate(corners):
+    def predicate(corners: FrameCorners) -> bool:
         return counter[corners.ids.flatten()] >= min_len
 
+    return StorageFilter(corner_storage, predicate)
+
+
+def without_long_jump_corners(corner_storage: CornerStorage, max_dst: float) -> CornerStorage:
+    def predicate(corners: FrameCorners) -> bool:
+        return corners.flow_quals.flatten() <= max_dst
     return StorageFilter(corner_storage, predicate)
 
 
