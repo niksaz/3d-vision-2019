@@ -35,7 +35,7 @@ def _init_on_two_frames(frame_corners_0, frame_corners_1, intrinsic_mat, triang_
     correspondences = remove_correspondences_with_ids(correspondences, np.where(e_mask == 0)[0])
     R1, R2, t_d = cv2.decomposeEssentialMat(E)
     for R, t in [(R1, t_d), (R1, -t_d), (R2, t_d), (R2, -t_d)]:
-        pose_1 = Pose(R.T, R.T @ t)
+        pose_1 = Pose(R.T, R.T @ -t)
         view_1 = pose_to_view_mat3x4(pose_1)
         view_0 = eye3x4()
         pts, ids = triangulate_correspondences(correspondences, view_0, view_1, intrinsic_mat, triang_params)
