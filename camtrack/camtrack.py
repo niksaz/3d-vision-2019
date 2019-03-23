@@ -10,6 +10,7 @@ from collections import namedtuple
 import cv2
 import numpy as np
 
+from ba import run_bundle_adjustment
 from corners import CornerStorage, without_long_jump_corners
 from data3d import CameraParameters, PointCloud, Pose
 import frameseq
@@ -136,7 +137,7 @@ def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
     # 2-D metrics to filter untrustworthy corners
     max_dst_optical_flow = 0.1
     corner_storage = without_long_jump_corners(corner_storage, max_dst_optical_flow)
-    # Choose the first successful tracking parameters
+    # Choose the strictest tracking parameters that lead to a successful tracking
     strict_constraints = TriangulationParameters(
         max_reprojection_error=1.0,
         min_triangulation_angle_deg=5.0,
@@ -152,10 +153,22 @@ def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
     for triangulation_parameters in [strict_constraints, medium_constraints, weak_constraints]:
         result = _track_camera_with_params(corner_storage, intrinsic_mat, triangulation_parameters)
         if result.is_successful:
-            return result.view_mats, result.builder
+            print('Tracking succeeded.')
+            break
         else:
             print('Unsuccessful tracking. Restarting with weaker constraints...')
-    return [], PointCloudBuilder()
+    if result.is_successful:
+        view_mats = result.view_mats
+        pc_builder = result.builder
+        view_mats = run_bundle_adjustment(
+            intrinsic_mat=intrinsic_mat,
+            list_of_corners=list(corner_storage),
+            max_inlier_reprojection_error=triangulation_parameters.max_reprojection_error,
+            view_mats=view_mats,
+            pc_builder=pc_builder)
+        return view_mats, pc_builder
+    else:
+        return [], PointCloudBuilder()
 
 
 def track_and_calc_colors(camera_parameters: CameraParameters,

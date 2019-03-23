@@ -13,6 +13,7 @@ __all__ = [
     'draw_residuals',
     'eye3x4',
     'project_points',
+    'view_mat3x4_to_rodrigues_and_translation',
     'rodrigues_and_translation_to_view_mat3x4',
     'to_opencv_camera_mat3x3',
     'triangulate_correspondences',
@@ -236,6 +237,14 @@ def check_baseline(view_mat_1: np.ndarray, view_mat_2: np.ndarray,
     camera_center_2 = _to_camera_center(view_mat_2)
     distance = np.linalg.norm(camera_center_2 - camera_center_1)
     return distance >= min_distance
+
+
+def view_mat3x4_to_rodrigues_and_translation(view_mat: np.ndarray) \
+        -> Tuple[np.ndarray, np.ndarray]:
+    r_mat = view_mat[:, :3]
+    t_vec = view_mat[:, 3]
+    r_vec, _ = cv2.Rodrigues(r_mat)
+    return r_vec, t_vec
 
 
 def rodrigues_and_translation_to_view_mat3x4(r_vec: np.ndarray,
