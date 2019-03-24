@@ -10,7 +10,7 @@ from collections import namedtuple
 import cv2
 import numpy as np
 
-from ba import run_bundle_adjustment
+from ba import run_bundle_adjustment, OptimizationIsTooComputationallyHeavy
 from corners import CornerStorage, without_long_jump_corners
 from data3d import CameraParameters, PointCloud, Pose
 import frameseq
@@ -88,8 +88,6 @@ def _track_camera_with_params(
     view_mats = [eye3x4()]
     builder = PointCloudBuilder()
     builder.add_points(ids, pts)
-    ba_error_to_fix = 1.0
-    ba_frames = 10
     # Process the rest of the frames
     for frame_index in range(1, len(corner_storage)):
         print('Processing frame {}/{}'.format(frame_index, len(corner_storage)))
@@ -130,14 +128,6 @@ def _track_camera_with_params(
                 corner_storage[another_frame], corner_storage[frame_index],
                 view_mats[another_frame], view_mat,
                 intrinsic_mat, builder, triang_params)
-        # Do bundle adjustment
-        if len(view_mats) >= ba_frames:
-            view_mats[frame_index-ba_frames:frame_index] = run_bundle_adjustment(
-                intrinsic_mat=intrinsic_mat,
-                list_of_corners=list(corner_storage)[frame_index-ba_frames:frame_index],
-                max_inlier_reprojection_error=ba_error_to_fix,
-                view_mats=view_mats[frame_index-ba_frames:frame_index],
-                pc_builder=builder)
         print('new △ points={} cloud size={}'.format(total_new_points, len(builder.ids)))
     return TrackingResult(is_successful=True, view_mats=view_mats, builder=builder)
 
@@ -164,10 +154,29 @@ def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
         result = _track_camera_with_params(corner_storage, intrinsic_mat, triangulation_parameters)
         if result.is_successful:
             print('Tracking succeeded.')
-            return result.view_mats, result.builder
+            break
         else:
             print('Unsuccessful tracking. Restarting with weaker constraints...')
-    return [], PointCloudBuilder()
+    if result.is_successful:
+        view_mats = result.view_mats
+        pc_builder = result.builder
+        ba_error_to_fix = triangulation_parameters.max_reprojection_error
+        for attempt in range(10):
+            try:
+                new_view_mats = run_bundle_adjustment(
+                    intrinsic_mat=intrinsic_mat,
+                    list_of_corners=list(corner_storage),
+                    max_inlier_reprojection_error=ba_error_to_fix,
+                    view_mats=view_mats,
+                    pc_builder=pc_builder)
+                view_mats = new_view_mats
+                break
+            except OptimizationIsTooComputationallyHeavy:
+                ba_error_to_fix /= 2
+                print(f'Too heavy computation -- lowering error.')
+        return view_mats, pc_builder
+    else:
+        return [], PointCloudBuilder()
 
 
 def track_and_calc_colors(camera_parameters: CameraParameters,

@@ -1,5 +1,6 @@
 __all__ = [
     'run_bundle_adjustment',
+    'OptimizationIsTooComputationallyHeavy',
 ]
 
 from typing import List
@@ -22,7 +23,7 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
                           max_inlier_reprojection_error: float,
                           view_mats: List[np.ndarray],
                           pc_builder: PointCloudBuilder) -> List[np.ndarray]:
-    print('Running bundle adjustment...')
+    print(f'Running bundle adjustment with max_error={max_inlier_reprojection_error}')
     point3d_ids = set()
     inlier_corners = []
     non_empty_view_mats = []
@@ -77,6 +78,10 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
             final_view_mats.append(view_mat)
     pc_builder.update_points(np.array(point3d_ids), p[6*N:].reshape(-1, 3))
     return final_view_mats
+
+
+class OptimizationIsTooComputationallyHeavy(Exception):
+    pass
 
 
 def is_pos_def(X):
@@ -135,17 +140,18 @@ def _optimize_parameters(p: np.ndarray,
         errors = reproj_errors(params)
         return anp.dot(errors, errors)
 
-    params = anp.array(p)
-    reproj_error = cum_reproj_error(params)
-    print('Initial reprojection error:', reproj_error)
-    print('Computing Jacobian matrix... The size will be {}x{}'.format(T, K))
-
+    print('The size of Jacobin will be {}x{}'.format(T, K))
+    if T * K > 5e5:
+        raise OptimizationIsTooComputationallyHeavy
+    lambd = 1.0
     jacobian_reproj_errors = jacobian(reproj_errors)
-    J = jacobian_reproj_errors(params)
-    A = J.T.dot(J)
-    best_reporj_error = reproj_error
-    best_p = p
-    for lambd in [1e3, 1e2, 1e1, 1e0, 1e-1, 1e-2, 1e-3]:
+    for _ in range(10):
+        params = anp.array(p)
+        init_reproj_error = cum_reproj_error(params)
+        print('Current reprojection error:', init_reproj_error)
+        print('Computing Jacobian matrix... ')
+        J = jacobian_reproj_errors(params)
+        A = J.T.dot(J)
         B = A + lambd * np.diag(np.diagonal(A))
         U = B[:6*N, :6*N]
         W = B[:6*N, 6*N:]
@@ -167,8 +173,9 @@ def _optimize_parameters(p: np.ndarray,
         new_p += np.hstack((delta_c, delta_x))
         reproj_error = cum_reproj_error(anp.array(new_p))
         print('Reprojection error={} for lambda={}'.format(reproj_error, lambd))
-        if reproj_error < best_reporj_error:
-            best_reporj_error = reproj_error
-            best_p = new_p
-    print('Final reprojection error:', best_reporj_error)
-    p[:] = best_p
+        if reproj_error < init_reproj_error:
+            p[:] = new_p
+            lambd /= 10
+        else:
+            lambd *= 10
+    print('Final reprojection error:', cum_reproj_error(anp.array(p)))
