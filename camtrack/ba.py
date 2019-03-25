@@ -1,6 +1,5 @@
 __all__ = [
     'run_bundle_adjustment',
-    'OptimizationIsTooComputationallyHeavy',
 ]
 
 from typing import List
@@ -8,9 +7,9 @@ from recordclass import recordclass
 import sortednp as snp
 
 import numpy as np
-import autograd.numpy as anp
-from autograd import jacobian
 import scipy
+from scipy.optimize import approx_fprime
+from scipy.sparse import csr_matrix
 
 from corners import FrameCorners
 from _camtrack import *
@@ -28,14 +27,14 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
     inlier_corners = []
     non_empty_view_mats = []
     was_frame_unmatched = [True]
-    for frame_corners, view_mat in zip(list_of_corners[1:], view_mats[1:]):
+    for frame_corners, view_mat in zip(list_of_corners, view_mats):
         _, (indices_3d, indices_2d) = snp.intersect(
             pc_builder.ids.flatten(), frame_corners.ids.flatten(), indices=True)
         points3d = pc_builder.points[indices_3d]
         points2d = frame_corners.points[indices_2d]
         proj_mat = intrinsic_mat @ view_mat
         indices = calc_inlier_indices(points3d, points2d, proj_mat, max_inlier_reprojection_error)
-        was_frame_unmatched.append(len(indices) == 0)
+        was_frame_unmatched.append(len(indices) == 0 or np.array_equal(view_mat, eye3x4()))
         if was_frame_unmatched[-1]:
             continue
         frame_num = len(non_empty_view_mats)
@@ -43,7 +42,7 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
         for ind in indices:
             point3d_id = pc_builder.ids[indices_3d[ind], 0]
             point3d_ids.add(point3d_id)
-            corner_inlier = CornerInlier(point3d_id, frame_num, anp.array(points2d[ind]))
+            corner_inlier = CornerInlier(point3d_id, frame_num, points2d[ind])
             inlier_corners.append(corner_inlier)
     point3d_ids = sorted(list(point3d_ids))
     for i, (point3d_id, _, _) in enumerate(inlier_corners):
@@ -80,29 +79,13 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
     return final_view_mats
 
 
-class OptimizationIsTooComputationallyHeavy(Exception):
-    pass
-
-
 def is_pos_def(X):
     return np.all(np.linalg.eigvals(X) > 0)
 
 
-def _rodrigues_vec_to_r_mat(r_vec):
-    theta = anp.linalg.norm(r_vec)
-    if theta == 0:
-        return anp.eye(3)
-    r_vec = r_vec / theta
-    T = anp.array([[0, -r_vec[2], r_vec[1]],
-                   [r_vec[2], 0, -r_vec[0]],
-                   [-r_vec[1], r_vec[0], 0]])
-    R = anp.cos(theta)*anp.identity(3) + (1 - anp.cos(theta))*anp.dot(r_vec, r_vec.T) + anp.sin(theta)*T
-    return R
-
-
 def _project_point(point3d, proj_mat):
-    point3d_hom = anp.hstack((point3d, 1))
-    point2d = anp.dot(proj_mat, point3d_hom)
+    point3d_hom = np.hstack((point3d, 1))
+    point2d = np.dot(proj_mat, point3d_hom)
     point2d = point2d / point2d[2]
     return point2d.T[:2]
 
@@ -115,67 +98,85 @@ def _optimize_parameters(p: np.ndarray,
     K = 6*N + 3*M
     T = len(inlier_corners)
     assert p.size == K
-    intrinsic_mat = anp.array(intrinsic_mat)
 
-    def reproj_errors(params):
-        proj_mats = []
-        for frame_num in range(N):
-            p_id = 6*frame_num
-            r_mat = _rodrigues_vec_to_r_mat(params[p_id:p_id + 3])
-            t_vec = params[p_id + 3:p_id + 6].reshape(3, 1)
-            view_mat = anp.hstack((r_mat, t_vec))
-            proj_mat = anp.dot(intrinsic_mat, view_mat)
-            proj_mats.append(proj_mat)
-        errors = []
-        for point3d_id, frame_num, point in inlier_corners:
+    def get_reproj_error(p, point):
+        r_vec = p[0:3].reshape(3, 1)
+        t_vec = p[3:6].reshape(3, 1)
+        view_mat = rodrigues_and_translation_to_view_mat3x4(r_vec, t_vec)
+        proj_mat = np.dot(intrinsic_mat, view_mat)
+        point3d = p[6:9]
+        proj_point2d = _project_point(point3d, proj_mat)
+        proj_error = (point - proj_point2d).reshape(-1)
+        norm = np.linalg.norm(proj_error)
+        return norm
+
+    def get_reproj_errors(p):
+        errors = np.zeros(T)
+        for i, (point3d_id, frame_num, point) in enumerate(inlier_corners):
+            f_id = 6*frame_num
             p_id = 6*N + 3*point3d_id
-            point3d = params[p_id:p_id + 3]
-            proj_point2d = _project_point(point3d, proj_mats[frame_num])
-            proj_error = (point - proj_point2d).reshape(-1)
-            norm = anp.linalg.norm(proj_error)
-            errors.append(norm)
-        return anp.array(errors)
+            p1 = np.hstack((p[f_id:f_id+6], p[p_id:p_id+3]))
+            errors[i] = get_reproj_error(p1, point)
+        return np.array(errors)
 
-    def cum_reproj_error(params):
-        errors = reproj_errors(params)
-        return anp.dot(errors, errors)
+    def get_cum_reproj_error(p):
+        errors = get_reproj_errors(p)
+        return errors @ errors
+
+    def compute_jacobian(p):
+        data = []
+        row_ind = []
+        col_ind = []
+        for i, (point3d_id, frame_num, point) in enumerate(inlier_corners):
+            f_id = 6*frame_num
+            p_id = 6*N + 3*point3d_id
+            p1 = np.hstack((p[f_id:f_id+6], p[p_id:p_id+3]))
+            p1_prime = scipy.optimize.approx_fprime(
+                p1, lambda p1: get_reproj_error(p1, point), np.full(p1.size, 1e-9))
+            for k in range(6):
+                data.append(p1_prime[k])
+                row_ind.append(i)
+                col_ind.append(f_id+k)
+            for k in range(3):
+                data.append(p1_prime[6+k])
+                row_ind.append(i)
+                col_ind.append(p_id+k)
+        return scipy.sparse.csr_matrix((data, (row_ind, col_ind)), shape=(T, K))
 
     print('The size of Jacobin will be {}x{}'.format(T, K))
-    if T * K > 5e5:
-        raise OptimizationIsTooComputationallyHeavy
+    print('Computing Jacobian matrix... ')
+    J = compute_jacobian(p)
     lambd = 1.0
-    jacobian_reproj_errors = jacobian(reproj_errors)
     for _ in range(10):
-        params = anp.array(p)
-        init_reproj_error = cum_reproj_error(params)
+        init_reproj_error = get_cum_reproj_error(p)
         print('Current reprojection error:', init_reproj_error)
-        print('Computing Jacobian matrix... ')
-        J = jacobian_reproj_errors(params)
-        A = J.T.dot(J)
+        A = J.T.dot(J).toarray()
         B = A + lambd * np.diag(np.diagonal(A))
         U = B[:6*N, :6*N]
         W = B[:6*N, 6*N:]
         V = B[6*N:, 6*N:]
         V_inv = np.linalg.inv(V)
 
-        u = reproj_errors(params)
-        g = J.T.dot(u)
+        u = get_reproj_errors(p)
+        g = J.toarray().T.dot(u)
         g_c, g_x = g[:6*N], g[6*N:]
         L = U - W.dot(V_inv).dot(W.T)
         R = W.dot(V_inv).dot(g_x) - g_c
         if not is_pos_def(L):
             print('Non positive-definite. Returning...')
             return
-        L = scipy.linalg.cholesky(L, lower=True)
+        scipy.linalg.cho_factor(L, lower=True, overwrite_a=True)
         delta_c = scipy.linalg.cho_solve((L, True), R)
         delta_x = V_inv.dot(-g_x - W.T.dot(delta_c))
         new_p = p.copy()
         new_p += np.hstack((delta_c, delta_x))
-        reproj_error = cum_reproj_error(anp.array(new_p))
+        reproj_error = get_cum_reproj_error(new_p)
         print('Reprojection error={} for lambda={}'.format(reproj_error, lambd))
         if reproj_error < init_reproj_error:
             p[:] = new_p
+            print('Recomputing Jacobian matrix... ')
+            J = compute_jacobian(p)
             lambd /= 10
         else:
             lambd *= 10
-    print('Final reprojection error:', cum_reproj_error(anp.array(p)))
+    print('Final reprojection error:', get_cum_reproj_error(p))

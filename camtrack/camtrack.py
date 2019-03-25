@@ -10,7 +10,7 @@ from collections import namedtuple
 import cv2
 import numpy as np
 
-from ba import run_bundle_adjustment, OptimizationIsTooComputationallyHeavy
+from ba import run_bundle_adjustment
 from corners import CornerStorage, without_long_jump_corners
 from data3d import CameraParameters, PointCloud, Pose
 import frameseq
@@ -88,6 +88,8 @@ def _track_camera_with_params(
     view_mats = [eye3x4()]
     builder = PointCloudBuilder()
     builder.add_points(ids, pts)
+    ba_frames_in_adjustment = 20
+    ba_run_every_frames = 2
     # Process the rest of the frames
     for frame_index in range(1, len(corner_storage)):
         print('Processing frame {}/{}'.format(frame_index, len(corner_storage)))
@@ -129,6 +131,15 @@ def _track_camera_with_params(
                 view_mats[another_frame], view_mat,
                 intrinsic_mat, builder, triang_params)
         print('new △ points={} cloud size={}'.format(total_new_points, len(builder.ids)))
+        # Try to improve parameters with bundle adjustment
+        M = len(view_mats)
+        if M >= ba_frames_in_adjustment and M % ba_run_every_frames == 0:
+            view_mats[M-ba_frames_in_adjustment:] = run_bundle_adjustment(
+                intrinsic_mat=intrinsic_mat,
+                list_of_corners=list(corner_storage)[M-ba_frames_in_adjustment:],
+                max_inlier_reprojection_error=triang_params.max_reprojection_error,
+                view_mats=view_mats[M-ba_frames_in_adjustment:],
+                pc_builder=builder)
     return TrackingResult(is_successful=True, view_mats=view_mats, builder=builder)
 
 
@@ -160,20 +171,6 @@ def _track_camera(corner_storage: CornerStorage, intrinsic_mat: np.ndarray) \
     if result.is_successful:
         view_mats = result.view_mats
         pc_builder = result.builder
-        ba_error_to_fix = triangulation_parameters.max_reprojection_error
-        for attempt in range(10):
-            try:
-                new_view_mats = run_bundle_adjustment(
-                    intrinsic_mat=intrinsic_mat,
-                    list_of_corners=list(corner_storage),
-                    max_inlier_reprojection_error=ba_error_to_fix,
-                    view_mats=view_mats,
-                    pc_builder=pc_builder)
-                view_mats = new_view_mats
-                break
-            except OptimizationIsTooComputationallyHeavy:
-                ba_error_to_fix /= 2
-                print(f'Too heavy computation -- lowering error.')
         return view_mats, pc_builder
     else:
         return [], PointCloudBuilder()
