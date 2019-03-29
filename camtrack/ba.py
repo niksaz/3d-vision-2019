@@ -26,7 +26,7 @@ def run_bundle_adjustment(intrinsic_mat: np.ndarray,
     point3d_ids = set()
     inlier_corners = []
     non_empty_view_mats = []
-    was_frame_unmatched = [True]
+    was_frame_unmatched = []
     for frame_corners, view_mat in zip(list_of_corners, view_mats):
         _, (indices_3d, indices_2d) = snp.intersect(
             pc_builder.ids.flatten(), frame_corners.ids.flatten(), indices=True)

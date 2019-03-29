@@ -89,7 +89,7 @@ def _track_camera_with_params(
     builder = PointCloudBuilder()
     builder.add_points(ids, pts)
     ba_frames_in_adjustment = 20
-    ba_run_every_frames = 2
+    ba_run_every_frames = 5
     # Process the rest of the frames
     for frame_index in range(1, len(corner_storage)):
         print('Processing frame {}/{}'.format(frame_index, len(corner_storage)))
